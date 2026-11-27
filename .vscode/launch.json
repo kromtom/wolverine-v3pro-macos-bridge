@@ -1,0 +1,24 @@
+{
+  "configurations": [
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:wolverine-v3pro-macos-bridge}/app",
+      "name": "Debug WolverineBridge (app)",
+      "target": "WolverineBridge",
+      "configuration": "debug",
+      "preLaunchTask": "swift: Build Debug WolverineBridge (app)"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:wolverine-v3pro-macos-bridge}/app",
+      "name": "Release WolverineBridge (app)",
+      "target": "WolverineBridge",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release WolverineBridge (app)"
+    }
+  ]
+}
