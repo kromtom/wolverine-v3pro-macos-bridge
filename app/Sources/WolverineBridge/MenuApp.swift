@@ -19,7 +19,7 @@ enum Main {
 }
 
 /// Menu bar app (LSUIElement): bridges on launch, shows status, and offers Release USB, Rumble,
-/// Start at login, and the recent log.
+/// Start at login, and a log window.
 struct BridgeApp: App {
     @State private var model = BridgeModel()
 
@@ -29,10 +29,15 @@ struct BridgeApp: App {
         } label: {
             Image(systemName: model.iconName)
         }
+        Window("WolverineBridge Log", id: LogView.windowID) {
+            LogView(model: model)
+        }
+        .defaultSize(width: 640, height: 360)
+        .defaultLaunchBehavior(.suppressed)
     }
 }
 
-/// Last log lines for the menu, plus os_log (Console.app, subsystem = the app's bundle ID).
+/// Last log lines for the log window, plus os_log (Console.app, subsystem = the app's bundle ID).
 /// A line equal to the previous one (such as the core's claim failure every 0.5 s while another
 /// reader holds the pad) updates that entry's time and repeat count instead of adding a line.
 final class LogBuffer: Sendable {
@@ -116,10 +121,17 @@ final class BridgeModel {
             .contains { $0.processIdentifier != me && !$0.isTerminated }
     }
 
+    /// Assigns only changed values: @Observable notifies on every assignment, and each notice
+    /// rebuilds the menu.
     func refresh() {
-        if let session { stats = session.reader.snapshot }
-        logLines = log.snapshot
-        loginStatus = SMAppService.mainApp.status
+        if let session {
+            let s = session.reader.snapshot
+            if s != stats { stats = s }
+        }
+        let lines = log.snapshot
+        if lines != logLines { logLines = lines }
+        let status = SMAppService.mainApp.status
+        if status != loginStatus { loginStatus = status }
     }
 
     var iconName: String {
@@ -174,6 +186,7 @@ final class BridgeModel {
 
 struct MenuContent: View {
     let model: BridgeModel
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         let s = model.stats
@@ -196,13 +209,39 @@ struct MenuContent: View {
         } else if model.loginStatus == .requiresApproval {
             Button("Approve in Login Items Settings…") { SMAppService.openSystemSettingsLoginItems() }
         }
-        Menu("Recent Log") {
-            ForEach(Array(model.logLines.enumerated().reversed()), id: \.offset) { Text($0.element) }
-            Divider()
-            Button("Copy Log") { model.copyLog() }
+        Button("Show Log…") {
+            NSApp.activate() // LSUIElement app: bring the window to the front
+            openWindow(id: LogView.windowID)
         }
         Divider()
+        Button("About WolverineBridge…") {
+            NSWorkspace.shared.open(URL(string: "https://github.com/kromtom/wolverine-v3pro-macos-bridge")!)
+        }
         Button("Quit WolverineBridge") { model.quit() }
             .keyboardShortcut("q")
+    }
+}
+
+/// Live log, newest first. A window instead of a submenu: a submenu closes on each menu rebuild.
+struct LogView: View {
+    static let windowID = "log"
+    let model: BridgeModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ScrollView {
+                Text(model.logLines.reversed().joined(separator: "\n"))
+                    .font(.system(.body, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(8)
+            }
+            HStack {
+                Spacer()
+                Button("Copy Log") { model.copyLog() }
+            }
+        }
+        .padding()
+        .frame(minWidth: 400, minHeight: 200)
     }
 }

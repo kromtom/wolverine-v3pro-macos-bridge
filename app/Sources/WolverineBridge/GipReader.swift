@@ -14,7 +14,7 @@ import XboxHID
 /// the handshake completed (pad reconnected to the receiver), and can release the USB device on
 /// request so giptool or another USB reader can claim it.
 final class GipReader: @unchecked Sendable {
-    struct Stats: Sendable {
+    struct Stats: Equatable, Sendable {
         var connected = false    // USB handle open
         var released = false     // USB device released on request (setReleased)
         var handshake: String?   // gip_auth_state_name of the current session; nil before it starts
