@@ -1,0 +1,5 @@
+// Clang module for Swift: `import CGipCore` with -I src/core, link build/libgipcore.a + libusb + Security + CoreFoundation.
+module CGipCore {
+    header "gipcore.h"
+    export *
+}

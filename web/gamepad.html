@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wolverine / Gamepad API check</title>
+<style>
+  :root {
+    --ink: #202b30; --dim: #73838c; --line: #e2e8eb; --green: #16866c; --red: #b3412e;
+    --mono: Menlo, "SF Mono", ui-monospace, monospace;
+    font-family: "Avenir Next", Avenir, "Trebuchet MS", sans-serif;
+    color: var(--ink); color-scheme: light;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #eff2f3; }
+  main { max-width: 1080px; margin: 24px auto; padding: 0 16px; }
+  h1 { font-size: 24px; font-weight: 600; letter-spacing: -.03em; margin: 0 0 4px; }
+  p.hint { color: var(--dim); margin: 0 0 18px; font-size: 14px; }
+  .pad { background: #fff; border: 1px solid #dbe2e6; border-radius: 10px; padding: 18px 22px; margin-bottom: 16px; }
+  .id { font: 13px var(--mono); word-break: break-all; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px 22px; margin: 10px 0 14px; font-size: 13px; color: var(--dim); }
+  .meta b { color: var(--ink); font-weight: 600; }
+  .ok { color: var(--green) !important; }
+  .bad { color: var(--red) !important; }
+  h2 { font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: var(--dim); margin: 14px 0 8px; font-weight: 600; }
+  .buttons { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 6px; }
+  .btn { border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font-size: 12px; display: flex; justify-content: space-between; }
+  .btn span { font: 11px var(--mono); color: var(--dim); }
+  .btn.on { background: var(--green); border-color: var(--green); color: #fff; }
+  .btn.on span { color: #d8f1ea; }
+  .axes { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px 18px; }
+  .axis { display: grid; grid-template-columns: 70px 1fr 54px; align-items: center; gap: 8px; font-size: 12px; }
+  .bar { height: 8px; background: var(--line); border-radius: 4px; position: relative; overflow: hidden; }
+  .bar i { position: absolute; top: 0; bottom: 0; background: var(--green); }
+  .axis code { font: 11px var(--mono); text-align: right; }
+  .empty { color: var(--dim); font-size: 14px; }
+  .rumble { display: flex; align-items: center; gap: 12px; margin-top: 14px; font-size: 12px; color: var(--dim); }
+  .rumble button { font: inherit; color: var(--ink); background: #fff; border: 1px solid #c9d3d8; border-radius: 6px; padding: 5px 12px; cursor: pointer; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Gamepad API check</h1>
+  <p class="hint">Shows what this browser reports through <code>navigator.getGamepads()</code>. Press any button on the pad if nothing appears; browsers expose a gamepad only after its first input. Labels follow the standard mapping and only apply when mapping is <code>standard</code>.</p>
+  <div id="pads"><p class="empty">No gamepads yet.</p></div>
+</main>
+<script>
+"use strict";
+const BUTTON_NAMES = ["A", "B", "X", "Y", "LB", "RB", "LT", "RT", "View", "Menu",
+  "LS", "RS", "Up", "Down", "Left", "Right", "Guide"];
+const AXIS_NAMES = ["LX", "LY", "RX", "RY"];
+const root = document.getElementById("pads");
+const views = new Map();
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+
+function build(pad) {
+  const box = el("section", "pad");
+  box.append(el("div", "id", pad.id));
+  const meta = el("div", "meta");
+  const fields = {};
+  for (const k of ["index", "mapping", "buttons", "axes", "timestamp", "updates/s"]) {
+    const s = el("span");
+    s.append(k + " ");
+    fields[k] = el("b");
+    s.append(fields[k]);
+    meta.append(s);
+  }
+  box.append(meta);
+  box.append(el("h2", "", "Buttons"));
+  const buttons = el("div", "buttons");
+  const btns = pad.buttons.map((_, i) => {
+    const b = el("div", "btn");
+    b.append(pad.mapping === "standard" && BUTTON_NAMES[i] ? BUTTON_NAMES[i] : "b" + i);
+    const v = el("span", "", "0");
+    b.append(v);
+    buttons.append(b);
+    return { b, v };
+  });
+  box.append(buttons);
+  box.append(el("h2", "", "Axes"));
+  const axes = el("div", "axes");
+  const axs = pad.axes.map((_, i) => {
+    const row = el("div", "axis");
+    row.append(pad.mapping === "standard" && AXIS_NAMES[i] ? AXIS_NAMES[i] : "a" + i);
+    const bar = el("div", "bar");
+    const fill = el("i");
+    bar.append(fill);
+    const v = el("code", "", "0.00");
+    row.append(bar, v);
+    axes.append(row);
+    return { fill, v };
+  });
+  box.append(axes);
+  // Rumble test: Chrome sends this to the device as an output report (the bridge forwards it as GIP 0x09).
+  const rumble = el("div", "rumble");
+  const rb = el("button", "", "Rumble 0.5 s");
+  const rs = el("span", "", pad.vibrationActuator ? "" : "no vibrationActuator");
+  rb.disabled = !pad.vibrationActuator;
+  rb.addEventListener("click", async () => {
+    const live = navigator.getGamepads()[pad.index];
+    if (!live || !live.vibrationActuator) { rs.textContent = "pad gone"; return; }
+    rs.textContent = "playing...";
+    try {
+      const r = await live.vibrationActuator.playEffect("dual-rumble",
+        { duration: 500, strongMagnitude: 1.0, weakMagnitude: 1.0 });
+      rs.textContent = "result: " + r;
+    } catch (e) { rs.textContent = "error: " + e; }
+  });
+  rumble.append(rb, rs);
+  box.append(rumble);
+  return { box, fields, btns, axs, mapping: pad.mapping, count: pad.buttons.length + "/" + pad.axes.length,
+           last: 0, updates: 0, rate: 0, since: performance.now() };
+}
+
+function render(view, pad, now) {
+  const f = view.fields;
+  f.index.textContent = pad.index;
+  f.mapping.textContent = pad.mapping === "" ? '"" (not standard)' : pad.mapping;
+  f.mapping.className = pad.mapping === "standard" ? "ok" : "bad";
+  f.buttons.textContent = pad.buttons.length;
+  f.axes.textContent = pad.axes.length;
+  f.timestamp.textContent = pad.timestamp.toFixed(0);
+  if (pad.timestamp !== view.last) { view.updates++; view.last = pad.timestamp; }
+  if (now - view.since >= 1000) {
+    view.rate = view.updates * 1000 / (now - view.since);
+    view.updates = 0;
+    view.since = now;
+  }
+  f["updates/s"].textContent = view.rate.toFixed(0);
+  pad.buttons.forEach((b, i) => {
+    const v = view.btns[i];
+    v.b.classList.toggle("on", b.pressed);
+    v.v.textContent = b.value.toFixed(2);
+  });
+  pad.axes.forEach((a, i) => {
+    const v = view.axs[i];
+    const x = Math.max(-1, Math.min(1, a));
+    v.fill.style.left = (x < 0 ? (1 + x) * 50 : 50) + "%";
+    v.fill.style.width = Math.abs(x) * 50 + "%";
+    v.v.textContent = a.toFixed(2);
+  });
+}
+
+function frame(now) {
+  const pads = [...navigator.getGamepads()].filter(Boolean);
+  const seen = new Set();
+  for (const pad of pads) {
+    const key = pad.index + "|" + pad.id;
+    seen.add(key);
+    let view = views.get(key);
+    if (!view || view.mapping !== pad.mapping || view.count !== pad.buttons.length + "/" + pad.axes.length) {
+      if (view) view.box.remove();
+      view = build(pad);
+      views.set(key, view);
+      root.append(view.box);
+    }
+    render(view, pad, now);
+  }
+  for (const [key, view] of views) {
+    if (!seen.has(key)) { view.box.remove(); views.delete(key); }
+  }
+  const empty = root.querySelector(".empty");
+  if (views.size && empty) empty.remove();
+  if (!views.size && !empty) root.append(el("p", "empty", "No gamepads yet."));
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

@@ -1,0 +1,5 @@
+# Two Hellos: the first starts the session (init "none"), the second (pad reconnected to the receiver)
+# is ignored by the state machine but counted in gip_stats_t.n_hello.
+rx 02 20 01 1c 00 2a 39 fa 63 7e 00 00 32 15 3f 0a 05 00 13 00 a6 18 00 00 00 00 00 00 00 00 00 00
+rx 20 00 05 0e 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+rx 02 20 02 1c 00 2a 39 fa 63 7e 00 00 32 15 3f 0a 05 00 13 00 a6 18 00 00 00 00 00 00 00 00 00 00

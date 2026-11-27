@@ -1,0 +1,2 @@
+# Hello only; the test runs with init "none", so the core goes straight to running.
+rx 02 20 01 1c 00 2a 39 fa 63 7e 00 00 32 15 3f 0a 05 00 13 00 a6 18 00 00 00 00 00 00 00 00 00 00
