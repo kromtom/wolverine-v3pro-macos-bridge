@@ -96,8 +96,9 @@ swift build -c release --package-path "$ROOT/app" --product "$PRODUCT"
 BIN=$(swift build -c release --package-path "$ROOT/app" --show-bin-path)/$PRODUCT
 
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$ROOT/app/Resources/Info.plist" "$APP/Contents/Info.plist"
+cp "$ROOT/app/Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"   # from scripts/make-icon.swift
 plutil -replace CFBundleIdentifier -string "$BUNDLE_ID" "$APP/Contents/Info.plist"
 cp "$BIN" "$APP/Contents/MacOS/$PRODUCT"
 cp "$PROFILE" "$APP/Contents/embedded.provisionprofile"

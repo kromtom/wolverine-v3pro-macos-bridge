@@ -171,6 +171,7 @@ make test-core                # core unit test with a fake libusb, no hardware
 | `src/core/` | GIP host core (`gipcore.h`: libusb device, init sequence, input decoding; `gipauth.c`: security handshake), built as `build/libgipcore.a` |
 | `src/giptool.c` | Command-line reader for debugging |
 | `scripts/build-app.sh` | Build, bundle, and sign the app from your provisioning profile |
+| `scripts/make-icon.swift` | Draw the app icon and write `app/Resources/AppIcon.icns` (`swift scripts/make-icon.swift`) |
 | `tests/` | Core unit test with a fake libusb and scripted device traffic |
 | `web/gamepad.html` | Standalone page that shows what Chrome's Gamepad API sees |
 | [BACKLOG.md](BACKLOG.md) | Open items |
