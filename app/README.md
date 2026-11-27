@@ -4,18 +4,9 @@
 
 By default it starts as a menu bar app. `--cli` runs it in the terminal instead.
 
-## Create the provisioning profile
-
-`HIDVirtualDevice` needs the `com.apple.developer.hid.virtual.device` entitlement. Without it, `HIDVirtualDevice(properties:)` returns nil. The entitlement comes from a development provisioning profile. In the Apple Developer portal, under Certificates, Identifiers & Profiles:
-
-1. **Identifiers:** create an explicit App ID of your own, for example `com.<you>.wolverinebridge`. Enable **HID Virtual Device (development)**.
-2. **Devices:** register this Mac. Get its Provisioning UDID with `system_profiler SPHardwareDataType`.
-3. **Profiles:** create a **macOS App Development** profile for that App ID, with your Apple Development certificate and this Mac.
-4. Download the profile to `app/profiles/development.provisionprofile`. The folder is git-ignored.
-
-The profile and certificate expire yearly. When they expire, regenerate the profile and run `make bridge` again.
-
 ## Build
+
+The build needs a provisioning profile at `app/profiles/development.provisionprofile` that grants `com.apple.developer.hid.virtual.device`. Without it, `HIDVirtualDevice(properties:)` returns nil. See [Create the provisioning profile](../README.md#create-the-provisioning-profile) for how to create it.
 
 ```bash
 make bridge                                         # builds build/libgipcore.a first

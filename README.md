@@ -27,21 +27,97 @@ The app runs in userspace. It needs no kernel extension, DriverKit installation,
 - macOS 15 or later (CoreHID `HIDVirtualDevice`).
 - Xcode or the Command Line Tools with Swift 6.
 - Homebrew with `libusb` and `pkgconf`.
-- An Apple Developer account, an Apple Development certificate in your keychain, and a macOS App Development provisioning profile for your own App ID. See [app/README.md](app/README.md#create-the-provisioning-profile).
+- An Apple Developer account, an Apple Development certificate in your keychain, and a macOS App Development provisioning profile for your own App ID. See [Create the provisioning profile](#create-the-provisioning-profile).
 - The Wolverine V3 Pro in Xbox mode, USB identity `1532:0a3f`, over a USB data cable or the included 2.4 GHz HyperSpeed receiver. No Bluetooth pairing is needed.
 
-## Build and install
+## Get the source
 
 ```bash
 brew install libusb pkgconf
 git clone https://github.com/kromtom/wolverine-v3pro-macos-bridge.git
 cd wolverine-v3pro-macos-bridge
-# Put your provisioning profile at app/profiles/development.provisionprofile (git-ignored)
+```
+
+## Create the provisioning profile
+
+The bridge creates its virtual gamepad with CoreHID `HIDVirtualDevice`. That API needs the `com.apple.developer.hid.virtual.device` entitlement, which only a provisioning profile can grant. Without it, the app cannot create the virtual pad.
+
+Do these steps once. Repeat them when the profile expires, after one year.
+
+### 1. Make sure you have an Apple Development certificate
+
+1. Open Xcode, then **Xcode → Settings → Accounts**.
+2. Add your Apple ID if it is not listed, and select your team.
+3. Click **Manage Certificates**. If no **Apple Development** certificate is listed, click **+** and select **Apple Development**.
+
+Check that the certificate is in your keychain:
+
+```bash
+security find-identity -v -p codesigning | grep "Apple Development"
+```
+
+### 2. Register this Mac
+
+1. Get this Mac's Provisioning UDID:
+
+   ```bash
+   system_profiler SPHardwareDataType | grep "Provisioning UDID"
+   ```
+
+2. Go to [Certificates, Identifiers & Profiles → Devices](https://developer.apple.com/account/resources/devices/list) and click **+**.
+3. Select platform **macOS**, enter a device name, and paste the Provisioning UDID as the **Device ID (UUID)**.
+4. Click **Continue**, then **Register**.
+
+Skip this step if the Mac is already registered.
+
+### 3. Create the App ID and request the capability
+
+1. Go to [Identifiers](https://developer.apple.com/account/resources/identifiers/list) and click **+**.
+2. Select **App IDs**, click **Continue**, select type **App**, and click **Continue**.
+3. Enter a description, for example `Wolverine Bridge`.
+4. Select **Explicit** and enter a bundle ID of your own, for example `com.<you>.wolverinebridge`. Do not use a wildcard App ID.
+5. In the capability list, tick **HID Virtual Device (development)**. This is the capability that grants `com.apple.developer.hid.virtual.device`. No other capability is needed.
+6. Click **Continue**, then **Register**.
+
+### 4. Create and download the profile
+
+1. Go to [Profiles](https://developer.apple.com/account/resources/profiles/list) and click **+**.
+2. Under **Development**, select **macOS App Development** and click **Continue**.
+3. Select the App ID from step 3 and click **Continue**.
+4. Select your Apple Development certificate and click **Continue**.
+5. Select this Mac and click **Continue**.
+6. Enter the profile name `WolverineBridgeDev` and click **Generate**.
+7. Click **Download**. The browser saves the file as `~/Downloads/WolverineBridgeDev.provisionprofile`.
+
+If you enabled the capability after you created the profile, edit the profile and generate it again. An old profile does not get the new entitlement.
+
+### 5. Copy the profile into the repository
+
+Run these commands from the repository root (`wolverine-v3pro-macos-bridge`):
+
+```bash
+mkdir -p app/profiles
+cp ~/Downloads/WolverineBridgeDev.provisionprofile app/profiles/development.provisionprofile
+```
+
+The build expects exactly `app/profiles/development.provisionprofile`. The `app/profiles/` folder is git-ignored, so the profile is never committed. To keep the profile somewhere else, pass `PROFILE=/path/to/file.provisionprofile` to `make`.
+
+Check that the profile grants the entitlement:
+
+```bash
+security cms -D -i app/profiles/development.provisionprofile | grep -A1 hid.virtual.device
+```
+
+The output must contain `com.apple.developer.hid.virtual.device` followed by `<true/>`.
+
+## Build and install
+
+```bash
 make install-bridge          # build, sign, copy to ~/Applications/WolverineBridge.app
 open ~/Applications/WolverineBridge.app
 ```
 
-The bundle ID is read from the profile's App ID. Set `BUNDLE_ID=...` only when the profile uses a wildcard App ID.
+The bundle ID is read from the profile's App ID. Set `BUNDLE_ID=...` only when the profile uses a wildcard App ID. The build script stops with an error if the profile is missing, has expired, or does not grant the entitlement. It warns if this Mac is not in the profile.
 
 A controller icon appears in the menu bar. Connect the receiver or cable and switch on the controller. The menu shows the handshake state, then input counts. Tick **Start at Login** to start the bridge automatically.
 
