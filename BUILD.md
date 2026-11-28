@@ -94,14 +94,18 @@ Homebrew's libusb is built for the macOS version it was installed on. If you bun
 mkdir -p third_party && cd third_party
 curl -LO https://github.com/libusb/libusb/releases/download/v1.0.29/libusb-1.0.29.tar.bz2
 tar xjf libusb-1.0.29.tar.bz2 && cd libusb-1.0.29
-./configure --prefix="$PWD/../../build/libusb" --disable-dependency-tracking \
-    CFLAGS="-O2 -mmacosx-version-min=15.0" LDFLAGS="-mmacosx-version-min=15.0"
+./configure --prefix="$PWD/../../build/libusb" --disable-dependency-tracking ac_cv_func_pipe2=no \
+    CFLAGS="-O2 -mmacosx-version-min=15.0 -Werror=unguarded-availability-new" \
+    LDFLAGS="-mmacosx-version-min=15.0"
 make -j8 && make install
 cd ../..
 vtool -show-build build/libusb/lib/libusb-1.0.0.dylib | grep minos
+dyld_info -imports build/libusb/lib/libusb-1.0.0.dylib | grep weak-import
 ```
 
-The last command must print `minos 15.0`. To use a newer libusb, check the [libusb releases](https://github.com/libusb/libusb/releases) and change `1.0.29`.
+The `vtool` command must print `minos 15.0`. The `dyld_info` command must print nothing.
+
+`ac_cv_func_pipe2=no` is required. The SDK declares `pipe2` but it exists only on macOS 27 and later. Without the flag, configure finds `pipe2`, libusb links it as a weak import, and on older macOS `libusb_init_context` calls a NULL pointer and the app crashes on start. To use a newer libusb, check the [libusb releases](https://github.com/libusb/libusb/releases) and change `1.0.29`.
 
 `make clean` keeps `build/libusb`, but `rm -rf build` deletes it. In that case, run this step again.
 

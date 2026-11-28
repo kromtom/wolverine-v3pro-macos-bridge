@@ -9,8 +9,10 @@
 # PROFILE must be a Developer ID provisioning profile for your App ID with the HID Virtual Device
 # capability. Its Developer ID Application certificate must be in your keychain.
 # LIBUSB_PREFIX must hold a libusb built for the app's deployment target (macOS 15.0), for example:
-#   ./configure --prefix="$PWD/../../build/libusb" CFLAGS="-O2 -mmacosx-version-min=15.0" \
+#   ./configure --prefix="$PWD/../../build/libusb" ac_cv_func_pipe2=no \
+#       CFLAGS="-O2 -mmacosx-version-min=15.0 -Werror=unguarded-availability-new" \
 #       LDFLAGS="-mmacosx-version-min=15.0" && make && make install
+# ac_cv_func_pipe2=no is required: pipe2 exists only on macOS 27+, see BUILD.md.
 # Homebrew's libusb is built for the macOS version it was installed on, so it is not used.
 set -euo pipefail
 
@@ -39,6 +41,14 @@ LIBUSB_DYLIB=$LIBUSB_PREFIX/lib/$DYLIB_NAME
 LIBUSB_MINOS=$(vtool -show-build "$LIBUSB_DYLIB" | awk '/minos/ {print $2; exit}')
 if [[ "$(printf '%s\n%s\n' "$MIN_MACOS" "$LIBUSB_MINOS" | sort -V | tail -n 1)" != "$MIN_MACOS" ]]; then
     die "$LIBUSB_DYLIB is built for macOS $LIBUSB_MINOS; rebuild it with -mmacosx-version-min=$MIN_MACOS"
+fi
+
+# A weak import is a symbol newer than the deployment target. libusb calls such symbols without a
+# runtime check, so on older macOS the call jumps to NULL (pipe2 crashed the app on macOS 15).
+LIBUSB_WEAK=$(dyld_info -imports "$LIBUSB_DYLIB" | grep 'weak-import' || true)
+if [[ -n "$LIBUSB_WEAK" ]]; then
+    die "$LIBUSB_DYLIB has weak imports that may be missing on macOS $MIN_MACOS; rebuild it (see BUILD.md):
+$LIBUSB_WEAK"
 fi
 
 # 1. Build and assemble the app against this libusb. build-app.sh validates the profile, embeds it,
