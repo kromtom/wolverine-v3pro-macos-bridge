@@ -77,6 +77,9 @@ enum CLI {
     }
 
     static func run(_ o: BridgeOptions) async -> Never {
+        guard BridgeSession.hasPostEventAccess || BridgeSession.requestPostEventAccess() else {
+            fail(BridgeSession.accessError)
+        }
         guard let session = BridgeSession(options: o, log: log) else { fail(BridgeSession.deviceError) }
         let reader = session.reader
         await session.start()

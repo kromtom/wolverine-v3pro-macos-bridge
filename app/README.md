@@ -28,6 +28,8 @@ build/WolverineBridge.app/Contents/MacOS/WolverineBridge --help   # --identity, 
 
 Run the binary from inside the signed bundle, or the entitlement does not apply. The first launch right after signing once returned nil; a second launch worked. The cause is unknown.
 
+Creating the virtual device needs the PostEvent privacy permission, listed in **System Settings → Privacy & Security → Accessibility**. Without it, `HIDVirtualDevice(properties:)` returns nil and the log shows `IOServiceOpen:0xe00002e2` (`kIOReturnNotPermitted`). The bridge calls `IOHIDRequestAccess(kIOHIDRequestTypePostEvent)` at launch, which shows the system prompt once. The menu app then polls `AXIsProcessTrusted()` and starts the bridge once access is granted; if the device still cannot be created, it relaunches itself. It does not poll `IOHIDCheckAccess`, because the TCC framework keeps the denied answer cached in the running process (verified 2026-11-28: polls never reached tccd). The CLI exits with a hint. macOS ties the grant to the signing certificate, so a grant made for a development build does not cover a Developer ID build, and macOS does not prompt again. In that case, run `tccutil reset All <your bundle id>`, then launch again. `tccutil reset PostEvent` is not enough: macOS decides PostEvent from the Accessibility entry (tccd logs `Evaluated composed authorization from kTCCServicePostEvent to parent service kTCCServiceAccessibility`). The settings list shows only the app name, so a stale entry looks switched on. Do not keep a development copy (`~/Applications`) and a release copy installed together: each launch ties the entry to its own certificate. Found 2026-11-28 with the first notarized RC.
+
 Only one reader can claim the pad. Stop `giptool` and any other USB reader first. A second copy of the bridge shows an alert and exits.
 
 ## Verify
@@ -42,6 +44,7 @@ An empty mapping means Chrome does not map this VID/PID. Try `--identity ones` (
 
 Without `--cli`, `WolverineBridge` is a menu bar app (`LSUIElement`, AppKit `NSStatusItem` menu whose items update in place, so an open menu stays live). It starts bridging at launch with the default options (`045E:0B13`, rumble on).
 
+- **Open Accessibility Settings…** and **Relaunch WolverineBridge**: shown only while the PostEvent permission is missing (status `Allow WolverineBridge in Accessibility settings`). Relaunch is the manual fallback if the bridge does not start by itself after the grant.
 - Status: waiting for the pad, connected with the handshake state, or released. Handshake state and retry count, pad updates and reports, rumble sent/dropped/failed.
 - **Release USB Device**: closes the USB device so `giptool` or another reader can claim it. The virtual pad stays and sends neutral reports, so Chrome keeps its gamepad. Untick to claim the pad again. Every launch starts claimed.
 - **Rumble**: forwards host rumble when on (runtime `--no-rumble`).

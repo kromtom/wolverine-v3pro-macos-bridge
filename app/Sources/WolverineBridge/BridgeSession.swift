@@ -1,5 +1,6 @@
 import CoreHID
 import Foundation
+import IOKit.hid
 import Synchronization
 import XboxHID
 
@@ -67,6 +68,31 @@ final class BridgeSession: Sendable {
         Check the signature: codesign -d --entitlements - <app> must list
         com.apple.developer.hid.virtual.device, and the app must run from its signed bundle.
         """
+
+    /// Creating a virtual HID device needs the PostEvent privacy permission (System Settings >
+    /// Privacy & Security > Accessibility). Without it, HIDVirtualDevice(properties:) returns nil
+    /// (IOServiceOpen fails with kIOReturnNotPermitted). The grant is tied to the signing
+    /// certificate, so a grant made for a development build does not cover a Developer ID build.
+    static var hasPostEventAccess: Bool {
+        IOHIDCheckAccess(kIOHIDRequestTypePostEvent) == kIOHIDAccessTypeGranted
+    }
+
+    /// Shows the system Accessibility prompt if the user has not decided yet. Returns true only
+    /// when access is already granted. The answer arrives later, and IOHIDCheckAccess keeps the
+    /// denied answer cached in this process, so the menu app polls AXIsProcessTrusted instead.
+    /// No prompt appears if access was denied, or if a stale grant for another certificate exists.
+    static func requestPostEventAccess() -> Bool {
+        IOHIDRequestAccess(kIOHIDRequestTypePostEvent)
+    }
+
+    static let accessError = """
+        Accessibility access is not granted, so the virtual pad cannot be created.
+        Turn on WolverineBridge in System Settings > Privacy & Security > Accessibility
+        (remove an old WolverineBridge entry first), then start the bridge again.
+        """
+
+    static let accessibilitySettingsURL =
+        URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
 
     var pumpStats: PumpStats { pump.withLock { $0 } }
 

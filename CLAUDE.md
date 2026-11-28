@@ -46,6 +46,7 @@ build/WolverineBridge.app/Contents/MacOS/WolverineBridge --cli   # terminal mode
 ## Gotchas
 
 - **Exclusive USB ownership**: only one reader (bridge, giptool) can claim the device at a time.
+- `HIDVirtualDevice(properties:)` also needs the PostEvent TCC permission (Accessibility list), not only the entitlement. Missing access logs `IOServiceOpen:0xe00002e2`. TCC grants are tied to the signing certificate: a dev-build grant silently denies the Developer ID build (`tccutil reset All <bundle id>`; PostEvent is composed from the Accessibility entry, so `reset PostEvent` leaves the stale grant).
 - Closing the USB handle makes macOS unconfigure the device; the controller reboots and re-enumerates (~2 s). Holding the Xbox button powers it off — tap only.
 - Wireless handshake intermittently fails/stalls after reconnects; root cause unknown. Don't claim this is fixed without evidence.
 - Razer Synapse for Mac (if installed) publishes phantom virtual controllers `045E:028E` and `1532:27DB` that never emit data; filter them.

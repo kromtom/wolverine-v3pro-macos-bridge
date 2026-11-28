@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import Foundation
 import os
 import ServiceManagement
@@ -72,6 +73,7 @@ final class BridgeModel {
     private(set) var stats = GipReader.Stats()
     private(set) var logLines: [String] = []
     private(set) var deviceError: String?
+    private(set) var needsAccess = false // PostEvent (Accessibility) access missing; see BridgeSession
     private(set) var loginStatus = SMAppService.mainApp.status
     private(set) var released = false
     private(set) var rumble = true
@@ -94,18 +96,12 @@ final class BridgeModel {
             alert.runModal()
             exit(0)
         }
-        let log = log
-        guard let session = BridgeSession(options: BridgeOptions(), log: { log.append($0) }) else {
-            deviceError = "Virtual device unavailable (signature or entitlement)"
-            log.append(BridgeSession.deviceError.replacingOccurrences(of: "\n", with: " "))
-            logLines = log.snapshot
-            return
-        }
-        self.session = session
-        Task { [weak self] in
-            await session.start()
-            await session.run()
-            self?.stopped = true
+        if BridgeSession.hasPostEventAccess || BridgeSession.requestPostEventAccess() {
+            startSession()
+        } else {
+            needsAccess = true
+            deviceError = "Allow WolverineBridge in Accessibility settings"
+            log.append(BridgeSession.accessError.replacingOccurrences(of: "\n", with: " "))
         }
         Task { [weak self] in
             while let self {
@@ -113,6 +109,43 @@ final class BridgeModel {
                 try? await Task.sleep(for: .milliseconds(500))
             }
         }
+    }
+
+    /// Returns false when the virtual device could not be created.
+    @discardableResult
+    private func startSession() -> Bool {
+        let log = log
+        guard let session = BridgeSession(options: BridgeOptions(), log: { log.append($0) }) else {
+            deviceError = "Virtual device unavailable (signature or entitlement)"
+            log.append(BridgeSession.deviceError.replacingOccurrences(of: "\n", with: " "))
+            logLines = log.snapshot
+            return false
+        }
+        self.session = session
+        Task { [weak self] in
+            await session.start()
+            await session.run()
+            self?.stopped = true
+        }
+        return true
+    }
+
+    /// Starts a new copy of the app once this process has exited, then quits. Used when access
+    /// was granted while this process runs: the TCC framework caches the denied PostEvent answer
+    /// per process, so only a new process sees the grant for certain.
+    func relaunch() {
+        let pid = ProcessInfo.processInfo.processIdentifier
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/sh")
+        p.arguments = ["-c", "while kill -0 \(pid) 2>/dev/null; do sleep 0.2; done; /usr/bin/open \"$0\"",
+                       Bundle.main.bundlePath]
+        do {
+            try p.run()
+        } catch {
+            log.append("relaunch failed: \(error.localizedDescription); quit and open the app again")
+            return
+        }
+        NSApplication.shared.terminate(nil)
     }
 
     private static func anotherInstanceRunning() -> Bool {
@@ -125,6 +158,19 @@ final class BridgeModel {
     /// Assigns only changed values: @Observable notifies on every assignment, and each notice
     /// updates the menu and the log window.
     func refresh() {
+        // Start the bridge once the user grants Accessibility access. IOHIDCheckAccess keeps
+        // returning the cached denial in this process (verified 2026-11-28), so poll
+        // AXIsProcessTrusted, which reads the same Accessibility entry. If the device still
+        // cannot be created, relaunch: a new process gets a fresh answer.
+        if needsAccess, AXIsProcessTrusted() {
+            needsAccess = false
+            deviceError = nil
+            log.append("Accessibility access granted")
+            if !startSession() {
+                log.append("relaunching to apply the Accessibility grant")
+                relaunch()
+            }
+        }
         if let session {
             let s = session.reader.snapshot
             if s != stats { stats = s }
@@ -202,6 +248,8 @@ final class StatusMenu: NSObject {
     private lazy var rumble = item("Rumble", #selector(toggleRumble))
     private lazy var login = item("Start at Login", #selector(toggleLogin))
     private lazy var approve = item("Approve in Login Items Settings…", #selector(approveLogin))
+    private lazy var access = item("Open Accessibility Settings…", #selector(openAccessibility))
+    private lazy var relaunch = item("Relaunch WolverineBridge", #selector(relaunchApp))
     private var iconName: String?
     private var logWindow: NSWindow?
 
@@ -209,7 +257,7 @@ final class StatusMenu: NSObject {
         self.model = model
         super.init()
         menu.autoenablesItems = false
-        for i in [status, handshake, input, rumbleStats, .separator(), release, rumble, login, loginNote, approve,
+        for i in [status, access, relaunch, handshake, input, rumbleStats, .separator(), release, rumble, login, loginNote, approve,
                   item("Show Log…", #selector(showLog)), .separator(),
                   item("About WolverineBridge…", #selector(about)),
                   item("Quit WolverineBridge", #selector(quit), key: "q")] {
@@ -233,6 +281,8 @@ final class StatusMenu: NSObject {
             statusItem.button?.image = NSImage(systemSymbolName: model.iconName, accessibilityDescription: "WolverineBridge")
         }
         status.setTitle(model.statusText)
+        if access.isHidden == model.needsAccess { access.isHidden = !model.needsAccess }
+        if relaunch.isHidden == model.needsAccess { relaunch.isHidden = !model.needsAccess }
         handshake.setTitle("Handshake: \(s.handshake ?? "-"), \(s.handshakeRetries) retries")
         input.setTitle("Input: \(s.inputs) pad updates, \(s.reports) reports")
         rumbleStats.setTitle("Rumble: \(s.rumbleSent) sent, \(s.rumbleDropped) dropped, \(s.rumbleFailed) failed")
@@ -254,6 +304,8 @@ final class StatusMenu: NSObject {
     @objc private func toggleRumble() { model.setRumble(!model.rumble) }
     @objc private func toggleLogin() { model.setStartAtLogin(login.state != .on) }
     @objc private func approveLogin() { SMAppService.openSystemSettingsLoginItems() }
+    @objc private func relaunchApp() { model.relaunch() }
+    @objc private func openAccessibility() { NSWorkspace.shared.open(BridgeSession.accessibilitySettingsURL) }
     @objc private func about() {
         NSWorkspace.shared.open(URL(string: "https://github.com/kromtom/wolverine-v3pro-macos-bridge")!)
     }

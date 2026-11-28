@@ -10,3 +10,4 @@ __pycache__/
 app/.build/
 app/profiles/
 *.provisionprofile
+.build/
