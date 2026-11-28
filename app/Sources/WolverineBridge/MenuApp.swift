@@ -19,21 +19,22 @@ enum Main {
 }
 
 /// Menu bar app (LSUIElement): bridges on launch, shows status, and offers Release USB, Rumble,
-/// Start at login, and a log window.
+/// Start at login, and a log window. The status item and its menu are AppKit (StatusMenu); the
+/// SwiftUI App remains for its lifecycle and main menu (Edit commands such as Copy in the log window).
 struct BridgeApp: App {
-    @State private var model = BridgeModel()
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
     var body: some Scene {
-        MenuBarExtra {
-            MenuContent(model: model)
-        } label: {
-            Image(systemName: model.iconName)
-        }
-        Window("WolverineBridge Log", id: LogView.windowID) {
-            LogView(model: model)
-        }
-        .defaultSize(width: 640, height: 360)
-        .defaultLaunchBehavior(.suppressed)
+        Settings { EmptyView() }
+    }
+}
+
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var menu: StatusMenu?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        menu = StatusMenu(model: BridgeModel())
     }
 }
 
@@ -122,7 +123,7 @@ final class BridgeModel {
     }
 
     /// Assigns only changed values: @Observable notifies on every assignment, and each notice
-    /// rebuilds the menu.
+    /// updates the menu and the log window.
     func refresh() {
         if let session {
             let s = session.reader.snapshot
@@ -184,47 +185,114 @@ final class BridgeModel {
     }
 }
 
-struct MenuContent: View {
-    let model: BridgeModel
-    @Environment(\.openWindow) private var openWindow
+/// The status item and its menu. Items are created once and update() changes their titles and
+/// states in place. SwiftUI's MenuBarExtra replaced every item on each model change, which blanked
+/// labels in an open menu; with in-place updates the open menu stays drawn and live.
+@MainActor
+final class StatusMenu: NSObject {
+    private let model: BridgeModel
+    private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+    private let menu = NSMenu()
+    private let status = NSMenuItem.info()
+    private let handshake = NSMenuItem.info()
+    private let input = NSMenuItem.info()
+    private let rumbleStats = NSMenuItem.info()
+    private let loginNote = NSMenuItem.info("Start at Login needs ~/Applications (make install-bridge)")
+    private lazy var release = item("Release USB Device", #selector(toggleRelease))
+    private lazy var rumble = item("Rumble", #selector(toggleRumble))
+    private lazy var login = item("Start at Login", #selector(toggleLogin))
+    private lazy var approve = item("Approve in Login Items Settings…", #selector(approveLogin))
+    private var iconName: String?
+    private var logWindow: NSWindow?
 
-    var body: some View {
+    init(model: BridgeModel) {
+        self.model = model
+        super.init()
+        menu.autoenablesItems = false
+        for i in [status, handshake, input, rumbleStats, .separator(), release, rumble, login, loginNote, approve,
+                  item("Show Log…", #selector(showLog)), .separator(),
+                  item("About WolverineBridge…", #selector(about)),
+                  item("Quit WolverineBridge", #selector(quit), key: "q")] {
+            menu.addItem(i)
+        }
+        statusItem.menu = menu
+        observe()
+    }
+
+    /// Runs update() now and again after each change of a model property it read.
+    private func observe() {
+        withObservationTracking { update() } onChange: { [weak self] in
+            Task { @MainActor in self?.observe() } // onChange runs before the new value is stored
+        }
+    }
+
+    private func update() {
         let s = model.stats
-        Text(model.statusText)
-        Text("Handshake: \(s.handshake ?? "-"), \(s.handshakeRetries) retries")
-        Text("Input: \(s.inputs) pad updates, \(s.reports) reports")
-        Text("Rumble: \(s.rumbleSent) sent, \(s.rumbleDropped) dropped, \(s.rumbleFailed) failed")
-        Divider()
-        Toggle("Release USB Device", isOn: Binding(get: { model.released }, set: { model.setReleased($0) }))
-            .disabled(model.deviceError != nil)
-        Toggle("Rumble", isOn: Binding(get: { model.rumble }, set: { model.setRumble($0) }))
-            .disabled(model.deviceError != nil)
-        Toggle("Start at Login", isOn: Binding(
-            get: { model.loginStatus == .enabled || model.loginStatus == .requiresApproval },
-            set: { model.setStartAtLogin($0) }
-        ))
-        .disabled(!model.installed)
-        if !model.installed {
-            Text("Start at Login needs ~/Applications (make install-bridge)")
-        } else if model.loginStatus == .requiresApproval {
-            Button("Approve in Login Items Settings…") { SMAppService.openSystemSettingsLoginItems() }
+        if model.iconName != iconName {
+            iconName = model.iconName
+            statusItem.button?.image = NSImage(systemSymbolName: model.iconName, accessibilityDescription: "WolverineBridge")
         }
-        Button("Show Log…") {
-            NSApp.activate() // LSUIElement app: bring the window to the front
-            openWindow(id: LogView.windowID)
+        status.setTitle(model.statusText)
+        handshake.setTitle("Handshake: \(s.handshake ?? "-"), \(s.handshakeRetries) retries")
+        input.setTitle("Input: \(s.inputs) pad updates, \(s.reports) reports")
+        rumbleStats.setTitle("Rumble: \(s.rumbleSent) sent, \(s.rumbleDropped) dropped, \(s.rumbleFailed) failed")
+        let deviceOK = model.deviceError == nil
+        release.setState(model.released, enabled: deviceOK)
+        rumble.setState(model.rumble, enabled: deviceOK)
+        login.setState(model.loginStatus == .enabled || model.loginStatus == .requiresApproval, enabled: model.installed)
+        loginNote.isHidden = model.installed
+        approve.isHidden = !(model.installed && model.loginStatus == .requiresApproval)
+    }
+
+    private func item(_ title: String, _ action: Selector, key: String = "") -> NSMenuItem {
+        let i = NSMenuItem(title: title, action: action, keyEquivalent: key)
+        i.target = self
+        return i
+    }
+
+    @objc private func toggleRelease() { model.setReleased(!model.released) }
+    @objc private func toggleRumble() { model.setRumble(!model.rumble) }
+    @objc private func toggleLogin() { model.setStartAtLogin(login.state != .on) }
+    @objc private func approveLogin() { SMAppService.openSystemSettingsLoginItems() }
+    @objc private func about() {
+        NSWorkspace.shared.open(URL(string: "https://github.com/kromtom/wolverine-v3pro-macos-bridge")!)
+    }
+    @objc private func quit() { model.quit() }
+
+    @objc private func showLog() {
+        if logWindow == nil {
+            let w = NSWindow(contentViewController: NSHostingController(rootView: LogView(model: model)))
+            w.title = "WolverineBridge Log"
+            w.setContentSize(NSSize(width: 640, height: 360))
+            w.isReleasedWhenClosed = false
+            w.center()
+            logWindow = w
         }
-        Divider()
-        Button("About WolverineBridge…") {
-            NSWorkspace.shared.open(URL(string: "https://github.com/kromtom/wolverine-v3pro-macos-bridge")!)
-        }
-        Button("Quit WolverineBridge") { model.quit() }
-            .keyboardShortcut("q")
+        NSApp.activate() // LSUIElement app: bring the window to the front
+        logWindow?.makeKeyAndOrderFront(nil)
+    }
+}
+
+private extension NSMenuItem {
+    /// A disabled (grey) item that shows text, like a SwiftUI Text in a menu.
+    static func info(_ title: String = "") -> NSMenuItem {
+        let i = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        i.isEnabled = false
+        return i
+    }
+
+    /// Sets the title only when it changed, so an open menu redraws only what changed.
+    func setTitle(_ t: String) { if title != t { title = t } }
+
+    func setState(_ on: Bool, enabled: Bool) {
+        let st: NSControl.StateValue = on ? .on : .off
+        if state != st { state = st }
+        if isEnabled != enabled { isEnabled = enabled }
     }
 }
 
 /// Live log, newest first. A window instead of a submenu: a submenu closes on each menu rebuild.
 struct LogView: View {
-    static let windowID = "log"
     let model: BridgeModel
 
     var body: some View {

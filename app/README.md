@@ -40,13 +40,13 @@ An empty mapping means Chrome does not map this VID/PID. Try `--identity ones` (
 
 ## Menu bar app
 
-Without `--cli`, `WolverineBridge` is a menu bar app (`LSUIElement`, SwiftUI `MenuBarExtra`). It starts bridging at launch with the default options (`045E:0B13`, rumble on).
+Without `--cli`, `WolverineBridge` is a menu bar app (`LSUIElement`, AppKit `NSStatusItem` menu whose items update in place, so an open menu stays live). It starts bridging at launch with the default options (`045E:0B13`, rumble on).
 
 - Status: waiting for the pad, connected with the handshake state, or released. Handshake state and retry count, pad updates and reports, rumble sent/dropped/failed.
 - **Release USB Device**: closes the USB device so `giptool` or another reader can claim it. The virtual pad stays and sends neutral reports, so Chrome keeps its gamepad. Untick to claim the pad again. Every launch starts claimed.
 - **Rumble**: forwards host rumble when on (runtime `--no-rumble`).
 - **Start at Login**: `SMAppService.mainApp`, off until ticked. Enabled only when the app runs from `/Applications` or `~/Applications`, because `make bridge` deletes and rebuilds `build/WolverineBridge.app`.
-- **Recent Log**: the last 20 status lines (newest first; repeats are counted, not repeated) and Copy Log. The same lines go to os_log, with the app's bundle ID as subsystem. The `auth: ...` lines from `gipauth.c` go to stderr only, so they are not shown.
+- **Show Log…**: a window with the last 20 status lines (newest first; repeats are counted, not repeated) and Copy Log. The same lines go to os_log, with the app's bundle ID as subsystem. The `auth: ...` lines from `gipauth.c` go to stderr only, so they are not shown.
 - **Quit**: stops the reader (neutral report, USB released) and quits after at most 3 s.
 
 View the os_log lines with:

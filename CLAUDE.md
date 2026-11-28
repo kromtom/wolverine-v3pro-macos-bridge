@@ -12,7 +12,7 @@ Wolverine -> src/core (libgipcore.a: libusb + gipauth.c + GIP 0x20 decoder)
   -> IOHIDManager/GameController -> Chrome -> xbox.com/play
 ```
 
-- Non-sandboxed Swift userspace menu bar app (SwiftUI `MenuBarExtra`, start at login via `SMAppService`). It is not a DriverKit dext. If sandboxing is ever turned on, add `com.apple.security.device.usb`.
+- Non-sandboxed Swift userspace menu bar app (AppKit `NSStatusItem` menu updated in place; SwiftUI `MenuBarExtra` rebuilt its items on every change and blanked labels in an open menu; start at login via `SMAppService`). It is not a DriverKit dext. If sandboxing is ever turned on, add `com.apple.security.device.usb`.
 - DriverKit USB was rejected: `driverkit.transport.usb` is granted per vendor ID (Razer's `0x1532`), and DriverKit lacks CommonCrypto, which the handshake needs.
 - Signing: Apple Development certificate plus a development profile with **HID Virtual Device (development)** (`com.apple.developer.hid.virtual.device`). No notarization. The bundle ID is not committed: `scripts/build-app.sh` reads it from the profile's App ID (or `BUNDLE_ID`) and writes it into the bundle's Info.plist. Swift code uses `appBundleID` (`Bundle.main.bundleIdentifier`). Never hardcode a bundle ID.
 - Chrome applies Gamepad `mapping: "standard"` only to VID/PIDs it recognizes, so the virtual device impersonates a Microsoft Bluetooth pad (`045E:0B13` Xbox Series default, `045E:02FD` One S with `--identity ones`) with the Xbox Bluetooth firmware 5.x descriptor. Verified 2026-11-27, Chrome 158: `045E:0B13` gets `mapping: "standard"`. Guide does not reach the Gamepad API (cause unverified, see BACKLOG.md).
